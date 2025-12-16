@@ -1,0 +1,62 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# CI/CD files
+.gitlab-ci.yml
+gitlab-ci.yml
+
+# Documentation
+*.md
+README*
+CHANGELOG*
+LICENSE
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs and reports
+*.log
+dockle-report.json
+trivy-report.json
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Node modules (if applicable)
+node_modules/
+npm-debug.log*
+
+# Python cache (if applicable)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Build artifacts
+dist/
+build/
+*.tar
+*.gz
+*.zip
+
+# Secrets and configs (never include in image!)
+.env
+.env.*
+secrets/
+*.key
+*.pem
+*.crt
+
+# Other Docker files
+Docker-*
+Dockerfile.*
