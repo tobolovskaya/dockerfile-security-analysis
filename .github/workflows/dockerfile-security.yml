@@ -1,0 +1,74 @@
+# Two jobs:
+#  - the hardened Dockerfile must pass every scanner and become healthy;
+#  - the insecure Dockerfile must be caught, which proves the scanners work.
+name: Dockerfile security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  good:
+    name: Hardened Dockerfile must pass
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install scanners (checksums verified)
+        run: scripts/install-tools.sh
+
+      - name: Lint (hadolint)
+        run: hadolint Dockerfile.good
+
+      - name: Misconfiguration scan (Trivy)
+        run: trivy config --exit-code 1 Dockerfile.good
+
+      - name: Build image
+        run: |
+          docker build -f Dockerfile.good -t hardened:${{ github.sha }} .
+          docker save -o hardened.tar hardened:${{ github.sha }}
+
+      - name: Image audit (Dockle, CIS Docker Benchmark)
+        run: dockle --exit-code 1 --exit-level warn --input hardened.tar
+
+      - name: Runs as non-root and becomes healthy
+        run: |
+          test "$(docker inspect -f '{{.Config.User}}' hardened:${{ github.sha }})" = "10001"
+          docker run -d --name web hardened:${{ github.sha }}
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' web)
+            echo "health: $status"
+            if [ "$status" = "healthy" ]; then exit 0; fi
+            sleep 3
+          done
+          docker logs web
+          exit 1
+
+  bad:
+    name: Insecure Dockerfile must be caught
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install scanners (checksums verified)
+        run: scripts/install-tools.sh
+
+      - name: hadolint must report findings
+        run: |
+          if hadolint Dockerfile.bad | tee hadolint.txt; then
+            echo "::error::hadolint found nothing in Dockerfile.bad"; exit 1
+          fi
+          { echo "## hadolint: Dockerfile.bad"; echo '```'; cat hadolint.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Trivy must report findings
+        run: |
+          if trivy config --exit-code 1 Dockerfile.bad | tee trivy.txt; then
+            echo "::error::Trivy found nothing in Dockerfile.bad"; exit 1
+          fi
+          { echo "## Trivy: Dockerfile.bad"; echo '```'; cat trivy.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

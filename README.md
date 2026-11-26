@@ -1,142 +1,75 @@
-# 🐳 Dockerfile Security Analysis Lab
+# Dockerfile security analysis: insecure vs hardened
 
-> **Лабораторна робота з аналізу безпеки Dockerfile за допомогою GitLab CI/CD**
+[![Dockerfile security](https://github.com/tobolovskaya/dockerfile-security-analysis/actions/workflows/dockerfile-security.yml/badge.svg)](https://github.com/tobolovskaya/dockerfile-security-analysis/actions/workflows/dockerfile-security.yml)
 
-[![GitLab CI/CD](https://img.shields.io/badge/GitLab-CI%2FCD-orange?logo=gitlab)](https://gitlab.com)
-[![Docker](https://img.shields.io/badge/Docker-Security-blue?logo=docker)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-Educational-green)](#)
+> 🇳🇴 **Kort på norsk:** To Dockerfiler side om side, en usikker og en herdet, skannet med hadolint, Trivy og Dockle i GitHub Actions. Den herdede må bestå alle skannerne og bli «healthy». Den usikre må bli fanget, ellers feiler pipelinen.
+
+Two Dockerfiles side by side. CI checks both, in opposite directions:
+
+- **`Dockerfile.good` must pass** hadolint, Trivy and Dockle, run as a non-root user and report `healthy`.
+- **`Dockerfile.bad` must be caught.** If the scanners stop finding problems in it, the pipeline fails. This proves the scanners actually work.
+
+**Skills shown:** Dockerfile hardening · hadolint · Trivy misconfiguration scanning · Dockle (CIS Docker Benchmark) · GitHub Actions · verified tool downloads
+
+## What the scanners found in the insecure Dockerfile
+
+| Line | Problem | hadolint | Trivy |
+|---|---|---|---|
+| `RUN apt-get install -y curl` | unpinned package version | DL3008 | |
+| same | extra recommended packages installed | DL3015 | DS-0029 (high) |
+| same | apt lists left in the image | DL3009 | |
+| `ADD . /app` | ADD instead of COPY: can fetch URLs and unpack archives | DL3020 (error) | DS-0005 |
+| no `USER` | container runs as **root** | | DS-0002 (high) |
+| no `HEALTHCHECK` | orchestrator cannot tell if the app is alive | | DS-0026 |
+
+## What the first "good" Dockerfile got wrong
+
+The original hardened version looked right but did not work:
+
+| Problem | Why it matters | Fix |
+|---|---|---|
+| `apt-get install` with **no package names** | installed nothing, so `curl` was missing | use the Python already in the base image instead of installing curl |
+| `HEALTHCHECK` called `curl` on port 8443, where nothing listened | the container could **never** become healthy | the image now runs a small web server, and the health check calls it |
+| health check in shell form | hadolint DL3025 | JSON form, no shell |
+| named user `safeuser` | hadolint DL3066: may not resolve on the host | numeric UID `10001` |
+
+A Dockerfile can pass a review and still be broken. Building the image and waiting for `healthy` in CI is what showed it.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    subgraph good[Dockerfile.good must pass]
+      G1[hadolint] --> G2[Trivy config] --> G3[docker build] --> G4[Dockle] --> G5[non-root + healthy]
+    end
+    subgraph bad[Dockerfile.bad must be caught]
+      B1[hadolint finds issues] --> B2[Trivy finds issues]
+    end
+```
+
+- Scanners are downloaded from their GitHub releases with **pinned SHA-256 checksums** ([`scripts/install-tools.sh`](scripts/install-tools.sh)).
+- GitHub Actions are pinned to commit SHAs; Dependabot keeps them and the base image current.
+- The findings for `Dockerfile.bad` are written to the job summary of every run.
+
+## How to run locally
+
+```bash
+hadolint Dockerfile.bad            # shows the findings
+hadolint Dockerfile.good           # clean
+trivy config Dockerfile.bad
+docker build -f Dockerfile.good -t hardened . && docker run --rm -p 8080:8080 hardened
+```
+
+## Hva jeg lærte / What I learned
+
+- **Linting is not testing.** The first hardened Dockerfile passed a visual review, but the image could never become healthy. Only running it showed that.
+- **Different scanners see different things.** hadolint caught ADD and unpinned packages; Trivy caught the root user and the missing health check.
+- **Test the test.** A security scan that passes everything might simply be broken. Requiring the bad Dockerfile to fail keeps the scanners honest.
 
 ---
 
-## 🚀 Швидка навігація
+Originally built as coursework during my MSc in Computer Science (Woolf / GoIT Neoversity) with GitLab CI, then moved to GitHub Actions and corrected.
 
-| Документ | Призначення | Час читання |
-|----------|-------------|-------------|
-| [⚡ QUICK_START.md](QUICK_START.md) | Почніть за 5 хвилин | 5 хв |
-| [📚 INDEX.md](INDEX.md) | Повна навігація | 10 хв |
-| [📋 SUBMISSION_CHECKLIST.md](SUBMISSION_CHECKLIST.md) | Контрольний список здачі | 5 хв |
-| [🔍 COMPARISON.md](COMPARISON.md) | Порівняння Docker-bad vs Docker-good | 10 хв |
-| [💡 CONCLUSIONS.md](CONCLUSIONS.md) | Відповіді на питання | 20 хв |
-| [📝 ANALYSIS.md](ANALYSIS.md) | Повний звіт | 30 хв |
-| [🔒 SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md) | Чеклист безпеки | 15 хв |
+**Yevheniia Tobolovska** · IT operations and security · [Portfolio](https://my-portfolio-yevheniia-tobolovskas-projects.vercel.app/) · [LinkedIn](https://www.linkedin.com/in/yevheniia-tobolovska)
 
----
-
-## 📁 Структура проєкту
-
-```
-├── .gitlab-ci.yml    # Конфігурація CI/CD pipeline
-├── Docker-bad        # Небезпечний Dockerfile (з вразливостями)
-├── Docker-good       # Безпечний Dockerfile (виправлений)
-├── ANALYSIS.md       # Детальний звіт про аналіз
-└── README.md         # Цей файл
-```
-
-## 🚀 Швидкий старт
-
-### 1. Створення проєкту в GitLab
-
-1. Увійдіть у GitLab
-2. Створіть новий проєкт "docker-security"
-3. Завантажте файли з цього репозиторію
-
-### 2. Тестування Docker-bad
-
-```bash
-# Перейменуйте Docker-bad на Dockerfile
-git mv Docker-bad Dockerfile
-git add Dockerfile .gitlab-ci.yml
-git commit -m "Test Docker-bad"
-git push
-```
-
-Перейдіть у розділ **CI/CD → Pipelines** і подивіться на результати.
-
-### 3. Тестування Docker-good
-
-```bash
-# Замініть Dockerfile на Docker-good
-git mv Docker-good Dockerfile
-git add Dockerfile
-git commit -m "Test Docker-good"
-git push
-```
-
-## 🔍 Інструменти аналізу
-
-### Hadolint
-- **Призначення**: Лінтинг Dockerfile
-- **Що перевіряє**: Синтаксис, стиль, best practices
-
-### Trivy
-- **Призначення**: Сканування безпеки
-- **Що перевіряє**: Конфігураційні вразливості, відсутність безпекових налаштувань
-
-### Dockle
-- **Призначення**: Аудит best practices
-- **Що перевіряє**: CIS Docker Benchmark, оптимізація, production-готовність
-
-## 📊 Очікувані результати
-
-### Docker-bad (❌ Не пройде перевірки)
-
-- Hadolint: ⚠️ Попередження про ADD, apt-get без прапорців
-- Trivy: ❌ Критичні проблеми (запуск від root)
-- Dockle: ❌ Порушення CIS benchmarks
-
-### Docker-good (✅ Пройде всі перевірки)
-
-- Hadolint: ✅ Без помилок
-- Trivy: ✅ Без вразливостей
-- Dockle: ✅ Відповідає стандартам
-
-## 📝 Основні проблеми безпеки в Docker-bad
-
-1. ⚠️ **Запуск від root** - критичний ризик
-2. ⚠️ **Відсутність HEALTHCHECK** - проблеми з моніторингом
-3. ⚠️ **ADD замість COPY** - непередбачувана поведінка
-4. ⚠️ **Відсутність --no-install-recommends** - зайві пакети
-5. ⚠️ **Не видалено apt кеш** - збільшення розміру
-
-## ✅ Виправлення в Docker-good
-
-1. ✅ Використання slim-образу (debian:12.5-slim)
-2. ✅ Створення непривілейованого користувача
-3. ✅ Додано HEALTHCHECK
-4. ✅ COPY замість ADD
-5. ✅ Очищення apt кешу
-6. ✅ Використання --no-install-recommends
-
-## 🧪 Локальне тестування
-
-```bash
-# Hadolint
-docker run --rm -i hadolint/hadolint < Dockerfile
-
-# Trivy
-docker run --rm -v $PWD:/mnt aquasec/trivy config /mnt/Dockerfile
-
-# Dockle (спочатку побудуйте образ)
-docker build -t test-image .
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock goodwithtech/dockle test-image
-```
-
-## 📚 Додаткові матеріали
-
-- [Детальний звіт про аналіз](ANALYSIS.md)
-- [Hadolint Rules](https://github.com/hadolint/hadolint#rules)
-- [Trivy Documentation](https://aquasecurity.github.io/trivy/)
-- [Dockle Checkpoints](https://github.com/goodwithtech/dockle#checkpoint-summary)
-
-## 🎯 Висновки
-
-Автоматизована перевірка безпеки Dockerfile є критично важливою для:
-- Виявлення вразливостей на ранніх стадіях
-- Дотримання industry best practices
-- Забезпечення production-готовності контейнерів
-- Зменшення поверхні атаки
-
----
-
-**Автор**: Yevheniia Tobolovska  
-**Дата**: Грудень 2025
+License: [MIT](LICENSE)
