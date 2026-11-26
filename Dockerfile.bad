@@ -1,5 +1,5 @@
 # Insecure on purpose: every line below is something the scanners should catch.
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 # Unpinned packages, recommended extras installed, apt cache left in the image
 RUN apt-get update && apt-get install -y curl
