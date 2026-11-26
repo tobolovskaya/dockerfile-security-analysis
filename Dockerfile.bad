@@ -1,0 +1,16 @@
+# Insecure on purpose: every line below is something the scanners should catch.
+FROM ubuntu:22.04
+
+# Unpinned packages, recommended extras installed, apt cache left in the image
+RUN apt-get update && apt-get install -y curl
+
+# Port opened without a reason
+EXPOSE 80
+
+# ADD can fetch URLs and unpack archives; the source of the files is unclear
+ADD . /app
+
+WORKDIR /app
+
+# No USER: the container runs as root. No HEALTHCHECK.
+CMD ["bash", "start.sh"]
