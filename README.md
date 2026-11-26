@@ -35,6 +35,15 @@ The original hardened version looked right but did not work:
 
 A Dockerfile can pass a review and still be broken. Building the image and waiting for `healthy` in CI is what showed it.
 
+## What Dockle found in the hardened image
+
+Dockle audits the **built image**, including the base image layers, so it found things hadolint and Trivy could not see:
+
+| Finding | Decision |
+|---|---|
+| CIS-DI-0008: setuid/setgid files (`su`, `passwd`, `mount`...) | **fixed**: the bits are removed in the same `RUN` that creates the user |
+| DKL-DI-0005: apt caches not cleared | **accepted** in [`.dockleignore`](.dockleignore) with a written reason: a false positive. The base image cleans up with `apt-get dist-clean`, which this Dockle version does not recognise, and `Dockerfile.good` installs no packages |
+
 ## Pipeline
 
 ```mermaid
@@ -64,6 +73,7 @@ docker build -f Dockerfile.good -t hardened . && docker run --rm -p 8080:8080 ha
 
 - **Linting is not testing.** The first hardened Dockerfile passed a visual review, but the image could never become healthy. Only running it showed that.
 - **Different scanners see different things.** hadolint caught ADD and unpinned packages; Trivy caught the root user and the missing health check.
+- **Scan the image, not only the file.** Dockle found setuid binaries that came with the base image. An accepted finding needs a written reason, not a silent `--ignore`.
 - **Test the test.** A security scan that passes everything might simply be broken. Requiring the bad Dockerfile to fail keeps the scanners honest.
 
 ---

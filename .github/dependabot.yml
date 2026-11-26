@@ -8,3 +8,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Dockerfile.bad is an insecure example on purpose; its old ubuntu base stays as it is.
+      - dependency-name: ubuntu

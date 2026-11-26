@@ -1,0 +1,4 @@
+# DKL-DI-0005 "Clear apt-get caches" is a false positive for the python:3.12-slim base image.
+# The base image cleans up with `apt-get dist-clean`, a newer apt command Dockle 0.4.15 does not recognise.
+# The finding is in the base image layer, not in Dockerfile.good, which installs no packages.
+DKL-DI-0005

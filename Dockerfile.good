@@ -6,8 +6,10 @@ WORKDIR /app
 # COPY only what the app needs (see .dockerignore)
 COPY site/ ./site/
 
-# Numeric UID: resolvable on any host, never root
-RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin appuser
+# Numeric UID: resolvable on any host, never root.
+# Strip setuid/setgid bits (su, passwd, mount...) so nothing in the image can gain privileges (Dockle CIS-DI-0008).
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin appuser \
+ && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 USER 10001
 
 EXPOSE 8080
